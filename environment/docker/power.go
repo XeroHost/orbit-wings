@@ -200,6 +200,8 @@ func (e *Environment) Stop(ctx context.Context) error {
 		return errors.Wrap(err, "environment/docker: cannot stop container")
 	}
 
+	e.RemoveRules()
+
 	return nil
 }
 
@@ -270,6 +272,8 @@ func (e *Environment) WaitForStop(ctx context.Context, duration time.Duration, t
 	case <-ok:
 	}
 
+	e.RemoveRules()
+
 	return nil
 }
 
@@ -317,6 +321,8 @@ func (e *Environment) Terminate(ctx context.Context, signal string) error {
 	// We expect Terminate to instantly kill the container
 	// so go ahead and mark it as dead and clean up
 	e.SetState(environment.ProcessOfflineState)
+
+	e.RemoveRules()
 
 	return nil
 }
