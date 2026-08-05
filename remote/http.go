@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pterodactyl/wings/internal/models"
@@ -41,11 +42,13 @@ type Client interface {
 	ValidateSftpCredentials(ctx context.Context, request SftpAuthRequest) (SftpAuthResponse, error)
 	GetFirewallRules(ctx context.Context, uuid string) ([]Rule, error)
 	SendActivityLogs(ctx context.Context, activity []models.Activity) error
+	SetCredentials(id, token string)
 }
 
 type client struct {
 	httpClient  *http.Client
 	baseUrl     string
+	mu          sync.RWMutex
 	tokenId     string
 	token       string
 	maxAttempts int
@@ -74,6 +77,22 @@ func WithCredentials(id, token string) ClientOption {
 		c.tokenId = id
 		c.token = token
 	}
+}
+
+// SetCredentials replaces the credentials used when making requests to the
+// remote API endpoint.
+func (c *client) SetCredentials(id, token string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tokenId = id
+	c.token = token
+}
+
+// credentials returns the credentials currently in use by this client.
+func (c *client) credentials() (string, string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.tokenId, c.token
 }
 
 // WithHttpClient sets the underlying HTTP client instance to use when making
@@ -113,10 +132,11 @@ func (c *client) requestOnce(ctx context.Context, method, path string, body io.R
 		return nil, err
 	}
 
-	req.Header.Set("User-Agent", fmt.Sprintf("Pterodactyl Wings/v%s (id:%s)", system.Version, c.tokenId))
+	tokenId, token := c.credentials()
+	req.Header.Set("User-Agent", fmt.Sprintf("Pterodactyl Wings/v%s (id:%s)", system.Version, tokenId))
 	req.Header.Set("Accept", "application/vnd.pterodactyl.v1+json")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s.%s", c.tokenId, c.token))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s.%s", tokenId, token))
 
 	// Call all opts functions to allow modifying the request
 	for _, o := range opts {
